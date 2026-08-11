@@ -1,0 +1,5 @@
+
+cd /home/edbennett/Documents/code/my_cli/
+uv init --script scratch.py   # adds inline metadata header, doesn't touch Cargo.toml
+uv add --script scratch.py requests rich   # declares deps right inside the script
+uv run scratch.py
