@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// A single Russian/English sentence with its IPA transcription and id.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SentencePair {
-    pub id: i64,
+    pub id: u64,
     pub ru: String,
     pub ipa: String,
     pub en: String,
@@ -16,12 +16,15 @@ pub struct SentencePair {
 }
 
 /// Parse a printer-style id list, e.g. "1,3,5-8" -> [1, 3, 5, 6, 7, 8].
-pub fn parse_id_list(spec: &str) -> Result<Vec<i64>, std::num::ParseIntError> {
+///
+/// Ids are unsigned, so a `-` is only ever treated as a range separator;
+/// a leading minus sign (e.g. "-3") is rejected as an invalid digit.
+pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, std::num::ParseIntError> {
     let mut result = Vec::new();
     for part in spec.split(',') {
         if let Some((start, end)) = part.split_once('-') {
-            let start: i64 = start.parse()?;
-            let end: i64 = end.parse()?;
+            let start: u64 = start.parse()?;
+            let end: u64 = end.parse()?;
             result.extend(start..=end);
         } else {
             result.push(part.parse()?);
@@ -54,7 +57,7 @@ pub fn main(prog: &str, args: &[String]) -> i32 {
     let path = &args[0];
     let id_spec = &args[1];
 
-    let wanted_ids: HashSet<i64> = match parse_id_list(id_spec) {
+    let wanted_ids: HashSet<u64> = match parse_id_list(id_spec) {
         Ok(ids) => ids.into_iter().collect(),
         Err(err) => {
             eprintln!("error: invalid id spec {id_spec:?}: {err}");
