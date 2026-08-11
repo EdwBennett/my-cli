@@ -121,6 +121,13 @@ mod tests {
         assert!(parse_id_list("1,abc-3").is_err());
     }
 
+    #[test]
+    fn parse_id_list_rejects_negative_ids() {
+        assert!(parse_id_list("-3").is_err());
+        assert!(parse_id_list("1,-3").is_err());
+        assert!(parse_id_list("3--1").is_err());
+    }
+
     struct TempFile(PathBuf);
 
     impl TempFile {
