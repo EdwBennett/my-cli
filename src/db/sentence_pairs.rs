@@ -83,3 +83,103 @@ pub fn main(prog: &str, args: &[String]) -> i32 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn parse_id_list_single_ids() {
+        assert_eq!(parse_id_list("1,3,5").unwrap(), vec![1, 3, 5]);
+    }
+
+    #[test]
+    fn parse_id_list_range() {
+        assert_eq!(parse_id_list("5-8").unwrap(), vec![5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn parse_id_list_mixed_ids_and_ranges() {
+        assert_eq!(parse_id_list("1,3,5-8").unwrap(), vec![1, 3, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn parse_id_list_single_element_range() {
+        assert_eq!(parse_id_list("4-4").unwrap(), vec![4]);
+    }
+
+    #[test]
+    fn parse_id_list_rejects_non_numeric_input() {
+        assert!(parse_id_list("abc").is_err());
+        assert!(parse_id_list("1,abc-3").is_err());
+    }
+
+    struct TempFile(PathBuf);
+
+    impl TempFile {
+        fn new(name: &str, contents: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("sentence_pairs_test_{}_{name}", std::process::id()));
+            fs::write(&path, contents).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    const SAMPLE_JSON: &str = r#"[
+        {"id": 1, "ru": "привет", "ipa": "[prʲɪˈvʲet]", "en": "hello", "words": "hello"},
+        {"id": 2, "ru": "мир", "ipa": "[mʲir]", "en": "world", "words": "world"}
+    ]"#;
+
+    #[test]
+    fn load_sentence_pairs_parses_all_fields() {
+        let file = TempFile::new("valid.json", SAMPLE_JSON);
+        let pairs = load_sentence_pairs(&file.0).unwrap();
+
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].id, 1);
+        assert_eq!(pairs[0].ru, "привет");
+        assert_eq!(pairs[0].ipa, "[prʲɪˈvʲet]");
+        assert_eq!(pairs[0].en, "hello");
+        assert_eq!(pairs[0].words, "hello");
+        assert_eq!(pairs[1].id, 2);
+    }
+
+    #[test]
+    fn load_sentence_pairs_missing_file_is_error() {
+        let result = load_sentence_pairs("/nonexistent/path/to/sentence_pairs.json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_sentence_pairs_malformed_json_is_error() {
+        let file = TempFile::new("malformed.json", "{ not valid json");
+        assert!(load_sentence_pairs(&file.0).is_err());
+    }
+
+    #[test]
+    fn main_reports_usage_error_on_wrong_arg_count() {
+        assert_eq!(main("prog", &[]), 1);
+        assert_eq!(main("prog", &["only-one".to_string()]), 1);
+    }
+
+    #[test]
+    fn main_reports_error_on_invalid_id_spec() {
+        let file = TempFile::new("for_bad_spec.json", SAMPLE_JSON);
+        let path = file.0.to_string_lossy().to_string();
+        assert_eq!(main("prog", &[path, "not-a-number".to_string()]), 1);
+    }
+
+    #[test]
+    fn main_succeeds_for_valid_input() {
+        let file = TempFile::new("for_success.json", SAMPLE_JSON);
+        let path = file.0.to_string_lossy().to_string();
+        assert_eq!(main("prog", &[path, "1".to_string()]), 0);
+    }
+}
