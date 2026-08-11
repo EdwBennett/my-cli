@@ -70,7 +70,10 @@ pub fn main(prog: &str, args: &[String]) -> i32 {
         }
     };
 
-    let selected: Vec<&SentencePair> = pairs.iter().filter(|p| wanted_ids.contains(&p.id)).collect();
+    let selected: Vec<&SentencePair> = pairs
+        .iter()
+        .filter(|p| wanted_ids.contains(&p.id))
+        .collect();
 
     match serde_json::to_string_pretty(&selected) {
         Ok(json) => {
