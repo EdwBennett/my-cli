@@ -23,6 +23,7 @@ pub enum IdListError {
         source: std::num::ParseIntError,
     },
     InvalidRange {
+        token: String,
         start: u64,
         end: u64,
     },
@@ -34,8 +35,11 @@ impl std::fmt::Display for IdListError {
             IdListError::ParseInt { token, source } => {
                 write!(f, "invalid id {token:?}: {source}")
             }
-            IdListError::InvalidRange { start, end } => {
-                write!(f, "range start {start} is greater than end {end}")
+            IdListError::InvalidRange { token, start, end } => {
+                write!(
+                    f,
+                    "invalid range {token:?}: start {start} is greater than end {end}"
+                )
             }
         }
     }
@@ -71,11 +75,15 @@ pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, IdListError> {
     let mut result = Vec::new();
     for part in spec.split(',') {
         let part = part.trim();
-        if let Some((start, end)) = part.split_once('-') {
-            let start = parse_id(start.trim())?;
-            let end = parse_id(end.trim())?;
+        if let Some((start_str, end_str)) = part.split_once('-') {
+            let start = parse_id(start_str.trim())?;
+            let end = parse_id(end_str.trim())?;
             if start > end {
-                return Err(IdListError::InvalidRange { start, end });
+                return Err(IdListError::InvalidRange {
+                    token: part.to_string(),
+                    start,
+                    end,
+                });
             }
             result.extend(start..=end);
         } else {
@@ -276,6 +284,14 @@ mod tests {
     fn parse_id_list_rejects_reversed_range() {
         assert!(parse_id_list("8-5").is_err());
         assert!(parse_id_list("1,8-5").is_err());
+    }
+
+    #[test]
+    fn parse_id_list_reversed_range_error_names_values() {
+        let err = parse_id_list("8-5").unwrap_err().to_string();
+        assert!(err.contains("8-5"), "error message was: {err}");
+        assert!(err.contains('8'), "error message was: {err}");
+        assert!(err.contains('5'), "error message was: {err}");
     }
 
     struct TempFile(PathBuf);
