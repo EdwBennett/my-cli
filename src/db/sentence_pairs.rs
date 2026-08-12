@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// A single Russian/English sentence with its IPA transcription and id.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SentencePair {
     pub id: u64,
     pub ru: String,
@@ -389,6 +390,15 @@ mod tests {
     #[test]
     fn load_sentence_pairs_malformed_json_is_error() {
         let file = TempFile::new("malformed.json", "{ not valid json");
+        assert!(load_sentence_pairs(&file.0).is_err());
+    }
+
+    #[test]
+    fn load_sentence_pairs_rejects_unknown_fields() {
+        let json = r#"[
+            {"id": 1, "ru": "привет", "ipa": "[prʲɪˈvʲet]", "en": "hello", "words": "hello", "extra": "surprise"}
+        ]"#;
+        let file = TempFile::new("unknown_field.json", json);
         assert!(load_sentence_pairs(&file.0).is_err());
     }
 
