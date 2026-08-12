@@ -18,14 +18,22 @@ pub struct SentencePair {
 /// Error returned by [`parse_id_list`].
 #[derive(Debug)]
 pub enum IdListError {
-    ParseInt(std::num::ParseIntError),
-    InvalidRange { start: u64, end: u64 },
+    ParseInt {
+        token: String,
+        source: std::num::ParseIntError,
+    },
+    InvalidRange {
+        start: u64,
+        end: u64,
+    },
 }
 
 impl std::fmt::Display for IdListError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IdListError::ParseInt(err) => write!(f, "{err}"),
+            IdListError::ParseInt { token, source } => {
+                write!(f, "invalid id {token:?}: {source}")
+            }
             IdListError::InvalidRange { start, end } => {
                 write!(f, "range start {start} is greater than end {end}")
             }
@@ -36,16 +44,17 @@ impl std::fmt::Display for IdListError {
 impl std::error::Error for IdListError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            IdListError::ParseInt(err) => Some(err),
+            IdListError::ParseInt { source, .. } => Some(source),
             IdListError::InvalidRange { .. } => None,
         }
     }
 }
 
-impl From<std::num::ParseIntError> for IdListError {
-    fn from(err: std::num::ParseIntError) -> Self {
-        IdListError::ParseInt(err)
-    }
+fn parse_id(token: &str) -> Result<u64, IdListError> {
+    token.parse().map_err(|source| IdListError::ParseInt {
+        token: token.to_string(),
+        source,
+    })
 }
 
 /// Parse a printer-style id list, e.g. "1,3,5-8" -> [1, 3, 5, 6, 7, 8].
@@ -63,14 +72,14 @@ pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, IdListError> {
     for part in spec.split(',') {
         let part = part.trim();
         if let Some((start, end)) = part.split_once('-') {
-            let start: u64 = start.trim().parse()?;
-            let end: u64 = end.trim().parse()?;
+            let start = parse_id(start.trim())?;
+            let end = parse_id(end.trim())?;
             if start > end {
                 return Err(IdListError::InvalidRange { start, end });
             }
             result.extend(start..=end);
         } else {
-            result.push(part.parse()?);
+            result.push(parse_id(part)?);
         }
     }
     Ok(result)
@@ -207,6 +216,15 @@ mod tests {
     fn parse_id_list_rejects_non_numeric_input() {
         assert!(parse_id_list("abc").is_err());
         assert!(parse_id_list("1,abc-3").is_err());
+    }
+
+    #[test]
+    fn parse_id_list_error_names_bad_token() {
+        let err = parse_id_list("1,abc,3").unwrap_err().to_string();
+        assert!(err.contains("abc"), "error message was: {err}");
+
+        let err = parse_id_list("1,3-xyz").unwrap_err().to_string();
+        assert!(err.contains("xyz"), "error message was: {err}");
     }
 
     #[test]
