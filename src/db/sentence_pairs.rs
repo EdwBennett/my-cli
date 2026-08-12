@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -203,31 +203,34 @@ impl From<serde_json::Error> for RunError {
     }
 }
 
-/// Loads records from `path`, keeps only those whose `id` appears in the
-/// parsed `id_spec` (e.g. "1,3,5-8"), and renders the result as a
-/// pretty-printed JSON array.
+/// Loads records from `path` and renders the ones whose `id` appears in
+/// the parsed `id_spec` (e.g. "1,3,5-8") as a pretty-printed JSON array.
+///
+/// The result follows `id_spec`'s order exactly, repeating a record once
+/// per repeated id (e.g. "2,2" yields id 2 twice).
 ///
 /// Any requested id with no matching record is reported to stderr as a
 /// warning rather than being silently dropped; this does not affect the
 /// return value.
 fn run(path: &str, id_spec: &str) -> Result<String, RunError> {
-    let wanted_ids: BTreeSet<u64> = parse_id_list(id_spec)
-        .map_err(|source| RunError::IdList {
-            spec: id_spec.to_string(),
-            source,
-        })?
-        .into_iter()
-        .collect();
+    let wanted_ids = parse_id_list(id_spec).map_err(|source| RunError::IdList {
+        spec: id_spec.to_string(),
+        source,
+    })?;
 
     let pairs = load_sentence_pairs(path)?;
+    let by_id: BTreeMap<u64, &SentencePair> = pairs.iter().map(|p| (p.id, p)).collect();
 
-    let selected: Vec<&SentencePair> = pairs
-        .iter()
-        .filter(|p| wanted_ids.contains(&p.id))
-        .collect();
-
-    let matched_ids: BTreeSet<u64> = selected.iter().map(|p| p.id).collect();
-    let missing_ids: Vec<u64> = wanted_ids.difference(&matched_ids).copied().collect();
+    let mut selected = Vec::with_capacity(wanted_ids.len());
+    let mut missing_ids = BTreeSet::new();
+    for id in wanted_ids {
+        match by_id.get(&id) {
+            Some(pair) => selected.push(pair),
+            None => {
+                missing_ids.insert(id);
+            }
+        }
+    }
     if !missing_ids.is_empty() {
         eprintln!("warning: id(s) not found: {missing_ids:?}");
     }
@@ -442,5 +445,18 @@ mod tests {
 
         let json = run(&path, "999").unwrap();
         assert_eq!(json.trim(), "[]");
+    }
+
+    #[test]
+    fn run_repeats_records_for_repeated_ids() {
+        let file = TempFile::new("for_repeated_id.json", SAMPLE_JSON);
+        let path = file.0.to_string_lossy().to_string();
+
+        let json = run(&path, "2,1,1").unwrap();
+        let parsed: Vec<SentencePair> = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed.iter().map(|p| p.id).collect::<Vec<_>>(),
+            vec![2, 1, 1]
+        );
     }
 }
