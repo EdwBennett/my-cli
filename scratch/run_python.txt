@@ -1,0 +1,9 @@
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt   # if you have one
+python3 scripts/your_script.py
+deactivate
+
+uv add --script scripts/your_script.py requests pandas
+uv run scripts/your_script.py
+uv remove --script scripts/your_script.py pandas
