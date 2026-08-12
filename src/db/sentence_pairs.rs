@@ -27,7 +27,17 @@ pub enum IdListError {
         start: u64,
         end: u64,
     },
+    RangeTooLarge {
+        token: String,
+    },
 }
+
+/// Largest number of ids a single range (e.g. "1-1000000") may expand to.
+///
+/// Without this bound, a range like "0-18446744073709551615" would try to
+/// build a multi-exabyte `Vec<u64>`, hanging or exhausting memory instead
+/// of failing fast.
+const MAX_RANGE_LEN: u64 = 1_000_000;
 
 impl std::fmt::Display for IdListError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -41,6 +51,9 @@ impl std::fmt::Display for IdListError {
                     "invalid range {token:?}: start {start} is greater than end {end}"
                 )
             }
+            IdListError::RangeTooLarge { token } => {
+                write!(f, "range {token:?} spans more than {MAX_RANGE_LEN} ids")
+            }
         }
     }
 }
@@ -50,6 +63,7 @@ impl std::error::Error for IdListError {
         match self {
             IdListError::ParseInt { source, .. } => Some(source),
             IdListError::InvalidRange { .. } => None,
+            IdListError::RangeTooLarge { .. } => None,
         }
     }
 }
@@ -70,7 +84,8 @@ fn parse_id(token: &str) -> Result<u64, IdListError> {
 /// a leading minus sign (e.g. "-3") is rejected as an invalid digit.
 ///
 /// A reversed range (e.g. "8-5") is rejected rather than silently
-/// producing an empty list.
+/// producing an empty list, and a range spanning more than
+/// [`MAX_RANGE_LEN`] ids is rejected rather than exhausting memory.
 pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, IdListError> {
     let mut result = Vec::new();
     for part in spec.split(',') {
@@ -83,6 +98,12 @@ pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, IdListError> {
                     token: part.to_string(),
                     start,
                     end,
+                });
+            }
+            let span = u128::from(end) - u128::from(start) + 1;
+            if span > u128::from(MAX_RANGE_LEN) {
+                return Err(IdListError::RangeTooLarge {
+                    token: part.to_string(),
                 });
             }
             result.extend(start..=end);
@@ -183,6 +204,10 @@ impl From<serde_json::Error> for RunError {
 /// Loads records from `path`, keeps only those whose `id` appears in the
 /// parsed `id_spec` (e.g. "1,3,5-8"), and renders the result as a
 /// pretty-printed JSON array.
+///
+/// Any requested id with no matching record is reported to stderr as a
+/// warning rather than being silently dropped; this does not affect the
+/// return value.
 fn run(path: &str, id_spec: &str) -> Result<String, RunError> {
     let wanted_ids: HashSet<u64> = parse_id_list(id_spec)
         .map_err(|source| RunError::IdList {
@@ -198,6 +223,13 @@ fn run(path: &str, id_spec: &str) -> Result<String, RunError> {
         .iter()
         .filter(|p| wanted_ids.contains(&p.id))
         .collect();
+
+    let matched_ids: HashSet<u64> = selected.iter().map(|p| p.id).collect();
+    let mut missing_ids: Vec<u64> = wanted_ids.difference(&matched_ids).copied().collect();
+    if !missing_ids.is_empty() {
+        missing_ids.sort_unstable();
+        eprintln!("warning: id(s) not found: {missing_ids:?}");
+    }
 
     Ok(serde_json::to_string_pretty(&selected)?)
 }
@@ -294,6 +326,24 @@ mod tests {
         assert!(err.contains('5'), "error message was: {err}");
     }
 
+    #[test]
+    fn parse_id_list_rejects_oversized_range() {
+        assert!(parse_id_list("1-2000000").is_err());
+    }
+
+    #[test]
+    fn parse_id_list_rejects_huge_range_without_hanging() {
+        // Regression test: end - start + 1 must not overflow u64 when
+        // computing the range's span.
+        assert!(parse_id_list("0-18446744073709551615").is_err());
+    }
+
+    #[test]
+    fn parse_id_list_accepts_range_at_the_limit() {
+        let ids = parse_id_list("1-1000000").unwrap();
+        assert_eq!(ids.len(), 1_000_000);
+    }
+
     struct TempFile(PathBuf);
 
     impl TempFile {
@@ -360,5 +410,24 @@ mod tests {
         let file = TempFile::new("for_success.json", SAMPLE_JSON);
         let path = file.0.to_string_lossy().to_string();
         assert_eq!(main("prog", &[path, "1".to_string()]), 0);
+    }
+
+    #[test]
+    fn run_succeeds_but_warns_when_some_ids_are_missing() {
+        let file = TempFile::new("for_missing_id.json", SAMPLE_JSON);
+        let path = file.0.to_string_lossy().to_string();
+
+        let json = run(&path, "1,999").unwrap();
+        assert!(json.contains("\"id\": 1"));
+        assert!(!json.contains("999"));
+    }
+
+    #[test]
+    fn run_succeeds_but_warns_when_no_ids_match() {
+        let file = TempFile::new("for_no_match.json", SAMPLE_JSON);
+        let path = file.0.to_string_lossy().to_string();
+
+        let json = run(&path, "999").unwrap();
+        assert_eq!(json.trim(), "[]");
     }
 }
