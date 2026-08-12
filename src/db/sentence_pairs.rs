@@ -17,14 +17,18 @@ pub struct SentencePair {
 
 /// Parse a printer-style id list, e.g. "1,3,5-8" -> [1, 3, 5, 6, 7, 8].
 ///
+/// Whitespace around ids, ranges, and range endpoints is ignored, so
+/// "1, 3, 5 - 8" parses the same as "1,3,5-8".
+///
 /// Ids are unsigned, so a `-` is only ever treated as a range separator;
 /// a leading minus sign (e.g. "-3") is rejected as an invalid digit.
 pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, std::num::ParseIntError> {
     let mut result = Vec::new();
     for part in spec.split(',') {
+        let part = part.trim();
         if let Some((start, end)) = part.split_once('-') {
-            let start: u64 = start.parse()?;
-            let end: u64 = end.parse()?;
+            let start: u64 = start.trim().parse()?;
+            let end: u64 = end.trim().parse()?;
             result.extend(start..=end);
         } else {
             result.push(part.parse()?);
@@ -113,6 +117,14 @@ mod tests {
     #[test]
     fn parse_id_list_single_element_range() {
         assert_eq!(parse_id_list("4-4").unwrap(), vec![4]);
+    }
+
+    #[test]
+    fn parse_id_list_ignores_whitespace() {
+        assert_eq!(
+            parse_id_list(" 1, 3 , 5 - 8 ").unwrap(),
+            vec![1, 3, 5, 6, 7, 8]
+        );
     }
 
     #[test]
