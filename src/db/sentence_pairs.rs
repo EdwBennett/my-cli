@@ -3,6 +3,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::process::ExitCode;
 
 use serde::{Deserialize, Serialize};
 
@@ -239,20 +240,20 @@ fn run(path: &str, id_spec: &str) -> Result<String, RunError> {
 /// Loads records from `path`, keeps only those whose `id` appears in the
 /// parsed `id-spec` (e.g. "1,3,5-8"), and prints the resulting records to
 /// stdout as a JSON array.
-pub fn main(prog: &str, args: &[String]) -> i32 {
+pub fn main(prog: &str, args: &[String]) -> ExitCode {
     if args.len() != 2 {
         eprintln!("usage: {prog} <path> <id-spec>");
-        return 1;
+        return ExitCode::FAILURE;
     }
 
     match run(&args[0], &args[1]) {
         Ok(json) => {
             println!("{json}");
-            0
+            ExitCode::SUCCESS
         }
         Err(err) => {
             eprintln!("error: {err}");
-            1
+            ExitCode::FAILURE
         }
     }
 }
@@ -403,22 +404,25 @@ mod tests {
 
     #[test]
     fn main_reports_usage_error_on_wrong_arg_count() {
-        assert_eq!(main("prog", &[]), 1);
-        assert_eq!(main("prog", &["only-one".to_string()]), 1);
+        assert_eq!(main("prog", &[]), ExitCode::FAILURE);
+        assert_eq!(main("prog", &["only-one".to_string()]), ExitCode::FAILURE);
     }
 
     #[test]
     fn main_reports_error_on_invalid_id_spec() {
         let file = TempFile::new("for_bad_spec.json", SAMPLE_JSON);
         let path = file.0.to_string_lossy().to_string();
-        assert_eq!(main("prog", &[path, "not-a-number".to_string()]), 1);
+        assert_eq!(
+            main("prog", &[path, "not-a-number".to_string()]),
+            ExitCode::FAILURE
+        );
     }
 
     #[test]
     fn main_succeeds_for_valid_input() {
         let file = TempFile::new("for_success.json", SAMPLE_JSON);
         let path = file.0.to_string_lossy().to_string();
-        assert_eq!(main("prog", &[path, "1".to_string()]), 0);
+        assert_eq!(main("prog", &[path, "1".to_string()]), ExitCode::SUCCESS);
     }
 
     #[test]
