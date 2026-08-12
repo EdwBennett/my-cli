@@ -37,11 +37,48 @@ pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, std::num::ParseIntError> {
     Ok(result)
 }
 
+/// Error returned by [`load_sentence_pairs`].
+#[derive(Debug)]
+pub enum LoadError {
+    Io(io::Error),
+    Json(serde_json::Error),
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoadError::Io(err) => write!(f, "{err}"),
+            LoadError::Json(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for LoadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            LoadError::Io(err) => Some(err),
+            LoadError::Json(err) => Some(err),
+        }
+    }
+}
+
+impl From<io::Error> for LoadError {
+    fn from(err: io::Error) -> Self {
+        LoadError::Io(err)
+    }
+}
+
+impl From<serde_json::Error> for LoadError {
+    fn from(err: serde_json::Error) -> Self {
+        LoadError::Json(err)
+    }
+}
+
 /// Load all `SentencePair` records from a JSON file.
 ///
 /// Each record in the file must contain the fields `id`, `ru`, `ipa`,
 /// `en`, and `words`.
-pub fn load_sentence_pairs<P: AsRef<Path>>(path: P) -> io::Result<Vec<SentencePair>> {
+pub fn load_sentence_pairs<P: AsRef<Path>>(path: P) -> Result<Vec<SentencePair>, LoadError> {
     let data = fs::read_to_string(path)?;
     let pairs = serde_json::from_str(&data)?;
     Ok(pairs)
