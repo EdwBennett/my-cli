@@ -15,6 +15,39 @@ pub struct SentencePair {
     pub words: String,
 }
 
+/// Error returned by [`parse_id_list`].
+#[derive(Debug)]
+pub enum IdListError {
+    ParseInt(std::num::ParseIntError),
+    InvalidRange { start: u64, end: u64 },
+}
+
+impl std::fmt::Display for IdListError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IdListError::ParseInt(err) => write!(f, "{err}"),
+            IdListError::InvalidRange { start, end } => {
+                write!(f, "range start {start} is greater than end {end}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for IdListError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            IdListError::ParseInt(err) => Some(err),
+            IdListError::InvalidRange { .. } => None,
+        }
+    }
+}
+
+impl From<std::num::ParseIntError> for IdListError {
+    fn from(err: std::num::ParseIntError) -> Self {
+        IdListError::ParseInt(err)
+    }
+}
+
 /// Parse a printer-style id list, e.g. "1,3,5-8" -> [1, 3, 5, 6, 7, 8].
 ///
 /// Whitespace around ids, ranges, and range endpoints is ignored, so
@@ -22,13 +55,19 @@ pub struct SentencePair {
 ///
 /// Ids are unsigned, so a `-` is only ever treated as a range separator;
 /// a leading minus sign (e.g. "-3") is rejected as an invalid digit.
-pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, std::num::ParseIntError> {
+///
+/// A reversed range (e.g. "8-5") is rejected rather than silently
+/// producing an empty list.
+pub fn parse_id_list(spec: &str) -> Result<Vec<u64>, IdListError> {
     let mut result = Vec::new();
     for part in spec.split(',') {
         let part = part.trim();
         if let Some((start, end)) = part.split_once('-') {
             let start: u64 = start.trim().parse()?;
             let end: u64 = end.trim().parse()?;
+            if start > end {
+                return Err(IdListError::InvalidRange { start, end });
+            }
             result.extend(start..=end);
         } else {
             result.push(part.parse()?);
@@ -175,6 +214,12 @@ mod tests {
         assert!(parse_id_list("-3").is_err());
         assert!(parse_id_list("1,-3").is_err());
         assert!(parse_id_list("3--1").is_err());
+    }
+
+    #[test]
+    fn parse_id_list_rejects_reversed_range() {
+        assert!(parse_id_list("8-5").is_err());
+        assert!(parse_id_list("1,8-5").is_err());
     }
 
     struct TempFile(PathBuf);
