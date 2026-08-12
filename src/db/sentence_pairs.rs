@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -40,19 +41,19 @@ pub enum IdListError {
 /// of failing fast.
 const MAX_RANGE_LEN: u64 = 1_000_000;
 
-impl std::fmt::Display for IdListError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for IdListError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IdListError::ParseInt { token, source } => {
+            Self::ParseInt { token, source } => {
                 write!(f, "invalid id {token:?}: {source}")
             }
-            IdListError::InvalidRange { token, start, end } => {
+            Self::InvalidRange { token, start, end } => {
                 write!(
                     f,
                     "invalid range {token:?}: start {start} is greater than end {end}"
                 )
             }
-            IdListError::RangeTooLarge { token } => {
+            Self::RangeTooLarge { token } => {
                 write!(f, "range {token:?} spans more than {MAX_RANGE_LEN} ids")
             }
         }
@@ -62,9 +63,8 @@ impl std::fmt::Display for IdListError {
 impl std::error::Error for IdListError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            IdListError::ParseInt { source, .. } => Some(source),
-            IdListError::InvalidRange { .. } => None,
-            IdListError::RangeTooLarge { .. } => None,
+            Self::ParseInt { source, .. } => Some(source),
+            Self::InvalidRange { .. } | Self::RangeTooLarge { .. } => None,
         }
     }
 }
@@ -122,11 +122,11 @@ pub enum LoadError {
     Json(serde_json::Error),
 }
 
-impl std::fmt::Display for LoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LoadError::Io(err) => write!(f, "{err}"),
-            LoadError::Json(err) => write!(f, "{err}"),
+            Self::Io(err) => write!(f, "{err}"),
+            Self::Json(err) => write!(f, "{err}"),
         }
     }
 }
@@ -134,21 +134,21 @@ impl std::fmt::Display for LoadError {
 impl std::error::Error for LoadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            LoadError::Io(err) => Some(err),
-            LoadError::Json(err) => Some(err),
+            Self::Io(err) => Some(err),
+            Self::Json(err) => Some(err),
         }
     }
 }
 
 impl From<io::Error> for LoadError {
     fn from(err: io::Error) -> Self {
-        LoadError::Io(err)
+        Self::Io(err)
     }
 }
 
 impl From<serde_json::Error> for LoadError {
     fn from(err: serde_json::Error) -> Self {
-        LoadError::Json(err)
+        Self::Json(err)
     }
 }
 
@@ -170,12 +170,12 @@ enum RunError {
     Serialize(serde_json::Error),
 }
 
-impl std::fmt::Display for RunError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for RunError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RunError::IdList { spec, source } => write!(f, "invalid id spec {spec:?}: {source}"),
-            RunError::Load(err) => write!(f, "{err}"),
-            RunError::Serialize(err) => write!(f, "{err}"),
+            Self::IdList { spec, source } => write!(f, "invalid id spec {spec:?}: {source}"),
+            Self::Load(err) => write!(f, "{err}"),
+            Self::Serialize(err) => write!(f, "{err}"),
         }
     }
 }
@@ -183,22 +183,22 @@ impl std::fmt::Display for RunError {
 impl std::error::Error for RunError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            RunError::IdList { source, .. } => Some(source),
-            RunError::Load(err) => Some(err),
-            RunError::Serialize(err) => Some(err),
+            Self::IdList { source, .. } => Some(source),
+            Self::Load(err) => Some(err),
+            Self::Serialize(err) => Some(err),
         }
     }
 }
 
 impl From<LoadError> for RunError {
     fn from(err: LoadError) -> Self {
-        RunError::Load(err)
+        Self::Load(err)
     }
 }
 
 impl From<serde_json::Error> for RunError {
     fn from(err: serde_json::Error) -> Self {
-        RunError::Serialize(err)
+        Self::Serialize(err)
     }
 }
 
@@ -210,7 +210,7 @@ impl From<serde_json::Error> for RunError {
 /// warning rather than being silently dropped; this does not affect the
 /// return value.
 fn run(path: &str, id_spec: &str) -> Result<String, RunError> {
-    let wanted_ids: HashSet<u64> = parse_id_list(id_spec)
+    let wanted_ids: BTreeSet<u64> = parse_id_list(id_spec)
         .map_err(|source| RunError::IdList {
             spec: id_spec.to_string(),
             source,
@@ -225,10 +225,9 @@ fn run(path: &str, id_spec: &str) -> Result<String, RunError> {
         .filter(|p| wanted_ids.contains(&p.id))
         .collect();
 
-    let matched_ids: HashSet<u64> = selected.iter().map(|p| p.id).collect();
-    let mut missing_ids: Vec<u64> = wanted_ids.difference(&matched_ids).copied().collect();
+    let matched_ids: BTreeSet<u64> = selected.iter().map(|p| p.id).collect();
+    let missing_ids: Vec<u64> = wanted_ids.difference(&matched_ids).copied().collect();
     if !missing_ids.is_empty() {
-        missing_ids.sort_unstable();
         eprintln!("warning: id(s) not found: {missing_ids:?}");
     }
 
