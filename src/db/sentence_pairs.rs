@@ -132,6 +132,68 @@ pub fn load_sentence_pairs<P: AsRef<Path>>(path: P) -> Result<Vec<SentencePair>,
     Ok(pairs)
 }
 
+/// Error returned by [`run`].
+#[derive(Debug)]
+enum RunError {
+    IdList { spec: String, source: IdListError },
+    Load(LoadError),
+    Serialize(serde_json::Error),
+}
+
+impl std::fmt::Display for RunError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RunError::IdList { spec, source } => write!(f, "invalid id spec {spec:?}: {source}"),
+            RunError::Load(err) => write!(f, "{err}"),
+            RunError::Serialize(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for RunError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            RunError::IdList { source, .. } => Some(source),
+            RunError::Load(err) => Some(err),
+            RunError::Serialize(err) => Some(err),
+        }
+    }
+}
+
+impl From<LoadError> for RunError {
+    fn from(err: LoadError) -> Self {
+        RunError::Load(err)
+    }
+}
+
+impl From<serde_json::Error> for RunError {
+    fn from(err: serde_json::Error) -> Self {
+        RunError::Serialize(err)
+    }
+}
+
+/// Loads records from `path`, keeps only those whose `id` appears in the
+/// parsed `id_spec` (e.g. "1,3,5-8"), and renders the result as a
+/// pretty-printed JSON array.
+fn run(path: &str, id_spec: &str) -> Result<String, RunError> {
+    let wanted_ids: HashSet<u64> = parse_id_list(id_spec)
+        .map_err(|source| RunError::IdList {
+            spec: id_spec.to_string(),
+            source,
+        })?
+        .into_iter()
+        .collect();
+
+    let pairs = load_sentence_pairs(path)?;
+
+    let selected: Vec<&SentencePair> = pairs
+        .iter()
+        .filter(|p| wanted_ids.contains(&p.id))
+        .collect();
+
+    Ok(serde_json::to_string_pretty(&selected)?)
+}
+
 /// CLI entry point: `<path> <id-spec>`.
 ///
 /// Loads records from `path`, keeps only those whose `id` appears in the
@@ -143,31 +205,7 @@ pub fn main(prog: &str, args: &[String]) -> i32 {
         return 1;
     }
 
-    let path = &args[0];
-    let id_spec = &args[1];
-
-    let wanted_ids: HashSet<u64> = match parse_id_list(id_spec) {
-        Ok(ids) => ids.into_iter().collect(),
-        Err(err) => {
-            eprintln!("error: invalid id spec {id_spec:?}: {err}");
-            return 1;
-        }
-    };
-
-    let pairs = match load_sentence_pairs(path) {
-        Ok(pairs) => pairs,
-        Err(err) => {
-            eprintln!("error: {err}");
-            return 1;
-        }
-    };
-
-    let selected: Vec<&SentencePair> = pairs
-        .iter()
-        .filter(|p| wanted_ids.contains(&p.id))
-        .collect();
-
-    match serde_json::to_string_pretty(&selected) {
+    match run(&args[0], &args[1]) {
         Ok(json) => {
             println!("{json}");
             0
