@@ -19,11 +19,11 @@ use std::process::{Command, ExitCode, ExitStatus, Output, Stdio};
 
 /// Audio sample rate (Hz) produced by the voice models in [`language_spec`]
 /// and [`voice_spec`], and the rate `say` asks `aplay` to play back at.
-const SAMPLE_RATE: u32 = 22050;
+pub(crate) const SAMPLE_RATE: u32 = 22050;
 
 /// Duration of silence `say` plays before the synthesized audio, so playback
 /// devices that take a moment to wake up don't clip the start of the speech.
-const LEAD_IN_SECONDS: f64 = 0.5;
+pub(crate) const LEAD_IN_SECONDS: f64 = 0.5;
 
 /// Paths to a Piper voice's ONNX model and its accompanying config file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,7 +143,7 @@ pub fn validate_paths(spec: VoiceSpec) -> Result<VoiceSpec, SayError> {
 /// Writing happens on a separate thread so a child that fills its stdout or
 /// stderr pipe before finishing reading stdin (or vice versa) can't deadlock
 /// against us.
-fn run_with_stdin(mut command: Command, input: Vec<u8>) -> io::Result<Output> {
+pub(crate) fn run_with_stdin(mut command: Command, input: Vec<u8>) -> io::Result<Output> {
     command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command.spawn()?;
     let mut stdin = child.stdin.take().expect("stdin was piped");
@@ -182,7 +182,7 @@ pub fn synthesize(lang: &str, text: &str, voice: Option<&str>) -> Result<Vec<u8>
 }
 
 /// Return zeroed S16LE mono PCM audio of the requested duration at [`SAMPLE_RATE`].
-fn silence(duration_seconds: f64) -> Vec<u8> {
+pub(crate) fn silence(duration_seconds: f64) -> Vec<u8> {
     let num_samples = (f64::from(SAMPLE_RATE) * duration_seconds).round() as usize;
     vec![0u8; num_samples * 2]
 }

@@ -1,10 +1,11 @@
 mod db;
+mod play;
 mod say;
 
 use std::env;
 use std::process::ExitCode;
 
-const SUBCOMMANDS: &str = "sentence-pairs, say";
+const SUBCOMMANDS: &str = "sentence-pairs, say, play";
 
 /// Route `args[0]` (the subcommand name) to its module, passing the rest of
 /// `args` through unchanged.
@@ -18,6 +19,7 @@ fn dispatch(prog: &str, args: &[String]) -> ExitCode {
     match subcommand.as_str() {
         "sentence-pairs" => db::sentence_pairs::main(prog, rest),
         "say" => say::main(prog, rest),
+        "play" => play::main(prog, rest),
         other => {
             eprintln!("error: unknown subcommand {other:?}");
             eprintln!("subcommands: {SUBCOMMANDS}");
@@ -58,6 +60,17 @@ mod tests {
         // branch (which would also fail, but say::main's own tests already
         // cover this exact case, so a mismatch here would point at routing).
         let args = ["say".to_string(), "-v".to_string(), "irina".to_string(), "hello".to_string()];
+        assert_eq!(dispatch("prog", &args), ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn dispatch_routes_play_subcommand_to_play_module() {
+        // id 999 doesn't exist in the bundled dataset, so this fails
+        // deterministically inside play::main (looking up the id) without
+        // needing piper, aplay, or ffmpeg installed. It confirms "play"
+        // reaches play::main rather than falling through to the
+        // unknown-subcommand branch.
+        let args = ["play".to_string(), "999".to_string(), "0".to_string()];
         assert_eq!(dispatch("prog", &args), ExitCode::FAILURE);
     }
 
