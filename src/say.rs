@@ -187,7 +187,9 @@ fn silence(duration_seconds: f64) -> Vec<u8> {
     vec![0u8; num_samples * 2]
 }
 
-fn say_inner(lang: &str, text: &str, voice: Option<&str>) -> Result<(), SayError> {
+/// Synthesize `text` in `lang` (optionally a specific `voice`) and play it
+/// immediately via `aplay`.
+pub fn say(lang: &str, text: &str, voice: Option<&str>) -> Result<(), SayError> {
     let audio = synthesize(lang, text, voice)?;
     let mut input = silence(LEAD_IN_SECONDS);
     input.extend_from_slice(&audio);
@@ -197,17 +199,6 @@ fn say_inner(lang: &str, text: &str, voice: Option<&str>) -> Result<(), SayError
 
     run_program("aplay", command, input)?;
     Ok(())
-}
-
-/// Synthesize `text` in `lang` (optionally a specific `voice`) and play it
-/// immediately via `aplay`.
-///
-/// Errors (missing models, synthesis/playback failure) are caught and
-/// reported to stderr rather than returned, so callers can fire-and-forget.
-pub fn say(lang: &str, text: &str, voice: Option<&str>) {
-    if let Err(err) = say_inner(lang, text, voice) {
-        eprintln!("Error during playback: {err}");
-    }
 }
 
 /// Flags parsed from `say`'s CLI arguments, before stdin fallback is applied.
@@ -283,8 +274,13 @@ pub fn main(prog: &str, args: &[String]) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    say(&flags.lang, &text, flags.voice.as_deref());
-    ExitCode::SUCCESS
+    match say(&flags.lang, &text, flags.voice.as_deref()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("Error during playback: {err}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 #[cfg(test)]
@@ -485,5 +481,15 @@ mod tests {
         assert_eq!(flags.lang, "en");
         assert_eq!(flags.voice, None);
         assert_eq!(flags.text_arg, None);
+    }
+
+    #[test]
+    fn main_reports_failure_exit_code_when_playback_fails() {
+        // "irina" is a ru-only voice; requesting it under the default lang
+        // (en) fails deterministically without needing piper/aplay or any
+        // voice models to be installed, so this doubles as a regression
+        // test for main() propagating say's Result into its ExitCode.
+        let args = ["-v".to_string(), "irina".to_string(), "hello".to_string()];
+        assert_eq!(main("prog", &args), ExitCode::FAILURE);
     }
 }
