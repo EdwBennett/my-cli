@@ -1,9 +1,6 @@
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt   # if you have one
-python3 scripts/your_script.py
-deactivate
+rustc --edition 2024 scripts/your_script.rs -o /tmp/your_script
+/tmp/your_script
 
-uv add --script scripts/your_script.py requests pandas
-uv run scripts/your_script.py
-uv remove --script scripts/your_script.py pandas
+# run a script's own tests (each script embeds its own #[cfg(test)] module)
+rustc --edition 2024 --test scripts/your_script.rs -o /tmp/your_script_test
+/tmp/your_script_test
