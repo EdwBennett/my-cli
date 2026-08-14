@@ -304,6 +304,22 @@ mod tests {
     }
 
     #[test]
+    fn voice_spec_irina_resolves_to_its_own_model_files() {
+        let home = Path::new("/home/test");
+        let spec = voice_spec(home, "ru", "irina").unwrap();
+        assert_eq!(
+            spec.model,
+            home.join(".local/share/piper-voices/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx")
+        );
+        assert_eq!(
+            spec.model_config,
+            home.join(".local/share/piper-voices/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json")
+        );
+        // irina is its own voice, not an alias for the ru default (denis).
+        assert_ne!(spec, language_spec(home, "ru").unwrap());
+    }
+
+    #[test]
     fn get_voice_spec_falls_back_to_language_default() {
         let home = Path::new("/home/test");
         assert_eq!(
