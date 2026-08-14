@@ -400,6 +400,42 @@ mod tests {
     }
 
     #[test]
+    fn run_program_returns_captured_stdout_on_success() {
+        let command = Command::new("cat");
+        let stdout = run_program("cat", command, b"hello".to_vec()).unwrap();
+        assert_eq!(stdout, b"hello");
+    }
+
+    #[test]
+    fn run_with_stdin_does_not_deadlock_on_input_larger_than_the_pipe_buffer() {
+        // Regression test for the writer thread in run_with_stdin: without
+        // it, writing input this large to `cat`'s stdin would block once the
+        // OS pipe buffer fills, while `cat` blocks writing to *our* stdout
+        // pipe for the same reason, deadlocking both sides.
+        let input = vec![b'x'; 4 * 1024 * 1024];
+        let command = Command::new("cat");
+        let output = run_with_stdin(command, input.clone()).unwrap();
+        assert_eq!(output.stdout, input);
+    }
+
+    #[test]
+    fn run_program_errors_on_nonzero_exit_status_with_captured_stderr() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "echo oops >&2; exit 1"]);
+        let err = run_program("sh", command, Vec::new()).unwrap_err();
+        assert!(matches!(err, SayError::ProcessFailed { .. }));
+        let message = err.to_string();
+        assert!(message.contains("oops"), "error message was: {message}");
+    }
+
+    #[test]
+    fn run_program_errors_when_binary_is_missing() {
+        let command = Command::new("definitely-not-a-real-binary-xyz");
+        let err = run_program("piper", command, Vec::new()).unwrap_err();
+        assert!(matches!(err, SayError::Io { program: "piper", .. }), "error was: {err:?}");
+    }
+
+    #[test]
     fn silence_produces_correct_byte_length_and_is_zeroed() {
         let bytes = silence(1.0);
         assert_eq!(bytes.len(), SAMPLE_RATE as usize * 2);
