@@ -183,7 +183,7 @@ pub fn synthesize(lang: &str, text: &str, voice: Option<&str>) -> Result<Vec<u8>
 
 /// Return zeroed S16LE mono PCM audio of the requested duration at [`SAMPLE_RATE`].
 fn silence(duration_seconds: f64) -> Vec<u8> {
-    let num_samples = (f64::from(SAMPLE_RATE) * duration_seconds) as usize;
+    let num_samples = (f64::from(SAMPLE_RATE) * duration_seconds).round() as usize;
     vec![0u8; num_samples * 2]
 }
 
@@ -213,36 +213,40 @@ pub fn say(lang: &str, text: &str, voice: Option<&str>) {
 /// Flags parsed from `say`'s CLI arguments, before stdin fallback is applied.
 struct ParsedFlags {
     lang: String,
+    voice: Option<String>,
     text_arg: Option<String>,
 }
 
 fn parse_flags(args: &[String]) -> Result<ParsedFlags, String> {
     let mut lang = "en".to_string();
+    let mut voice: Option<String> = None;
     let mut text_arg: Option<String> = None;
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
+    let mut args = args.iter().peekable();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
             "-l" | "--lang" => {
-                let value = args.get(i + 1).ok_or("--lang requires a value")?;
+                let value = args.next().ok_or("--lang requires a value")?;
                 if value != "en" && value != "ru" {
                     return Err(format!(
                         "invalid choice for --lang: {value:?} (choose from \"en\", \"ru\")"
                     ));
                 }
                 lang = value.clone();
-                i += 2;
+            }
+            "-v" | "--voice" => {
+                let value = args.next().ok_or("--voice requires a value")?;
+                voice = Some(value.clone());
             }
             other if text_arg.is_none() => {
                 text_arg = Some(other.to_string());
-                i += 1;
             }
             other => return Err(format!("unexpected argument: {other:?}")),
         }
     }
-    Ok(ParsedFlags { lang, text_arg })
+    Ok(ParsedFlags { lang, voice, text_arg })
 }
 
-/// CLI entry point: `[-l|--lang en|ru] [text]`.
+/// CLI entry point: `[-l|--lang en|ru] [-v|--voice VOICE] [text]`.
 ///
 /// Speaks `text` (or, if omitted, stdin) via [`say`]. Reports a usage error
 /// if neither a positional `text` argument nor piped stdin is available.
@@ -251,7 +255,7 @@ pub fn main(prog: &str, args: &[String]) -> ExitCode {
         Ok(flags) => flags,
         Err(message) => {
             eprintln!("error: {message}");
-            eprintln!("usage: {prog} say [-l|--lang en|ru] [text]");
+            eprintln!("usage: {prog} say [-l|--lang en|ru] [-v|--voice VOICE] [text]");
             return ExitCode::FAILURE;
         }
     };
@@ -267,7 +271,9 @@ pub fn main(prog: &str, args: &[String]) -> ExitCode {
             buf.trim().to_string()
         }
         None => {
-            eprintln!("usage: {prog} say [-l|--lang en|ru] <text>  (or provide text via stdin)");
+            eprintln!(
+                "usage: {prog} say [-l|--lang en|ru] [-v|--voice VOICE] <text>  (or provide text via stdin)"
+            );
             return ExitCode::FAILURE;
         }
     };
@@ -277,7 +283,7 @@ pub fn main(prog: &str, args: &[String]) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    say(&flags.lang, &text, None);
+    say(&flags.lang, &text, flags.voice.as_deref());
     ExitCode::SUCCESS
 }
 
@@ -413,6 +419,7 @@ mod tests {
     fn parse_flags_defaults_to_en_with_no_lang_flag() {
         let flags = parse_flags(&["hello".to_string()]).unwrap();
         assert_eq!(flags.lang, "en");
+        assert_eq!(flags.voice, None);
         assert_eq!(flags.text_arg.as_deref(), Some("hello"));
     }
 
@@ -438,6 +445,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_flags_accepts_short_and_long_voice_flag() {
+        let flags = parse_flags(&["-v".to_string(), "irina".to_string(), "hi".to_string()]).unwrap();
+        assert_eq!(flags.voice.as_deref(), Some("irina"));
+        assert_eq!(flags.text_arg.as_deref(), Some("hi"));
+
+        let flags = parse_flags(&["--voice".to_string(), "irina".to_string()]).unwrap();
+        assert_eq!(flags.voice.as_deref(), Some("irina"));
+    }
+
+    #[test]
+    fn parse_flags_combines_lang_and_voice_flags() {
+        let flags = parse_flags(&[
+            "-l".to_string(),
+            "ru".to_string(),
+            "-v".to_string(),
+            "irina".to_string(),
+            "привет".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(flags.lang, "ru");
+        assert_eq!(flags.voice.as_deref(), Some("irina"));
+        assert_eq!(flags.text_arg.as_deref(), Some("привет"));
+    }
+
+    #[test]
+    fn parse_flags_rejects_missing_voice_value() {
+        assert!(parse_flags(&["-v".to_string()]).is_err());
+    }
+
+    #[test]
     fn parse_flags_rejects_second_positional_argument() {
         assert!(parse_flags(&["one".to_string(), "two".to_string()]).is_err());
     }
@@ -446,6 +483,7 @@ mod tests {
     fn parse_flags_allows_missing_text_argument() {
         let flags = parse_flags(&[]).unwrap();
         assert_eq!(flags.lang, "en");
+        assert_eq!(flags.voice, None);
         assert_eq!(flags.text_arg, None);
     }
 }
