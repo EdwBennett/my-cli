@@ -1,3 +1,5 @@
+//! cargo run -- play --ru-voice irina 1-2 2 1 -t
+
 mod db;
 mod play;
 mod say;
@@ -59,7 +61,12 @@ mod tests {
         // say::main rather than falling through to the unknown-subcommand
         // branch (which would also fail, but say::main's own tests already
         // cover this exact case, so a mismatch here would point at routing).
-        let args = ["say".to_string(), "-v".to_string(), "irina".to_string(), "hello".to_string()];
+        let args = [
+            "say".to_string(),
+            "-v".to_string(),
+            "irina".to_string(),
+            "hello".to_string(),
+        ];
         assert_eq!(dispatch("prog", &args), ExitCode::FAILURE);
     }
 
@@ -78,7 +85,8 @@ mod tests {
 
     impl TempFile {
         fn new(name: &str, contents: &str) -> Self {
-            let path = std::env::temp_dir().join(format!("main_test_{}_{name}", std::process::id()));
+            let path =
+                std::env::temp_dir().join(format!("main_test_{}_{name}", std::process::id()));
             fs::write(&path, contents).unwrap();
             Self(path)
         }
@@ -96,7 +104,8 @@ mod tests {
         // would reject as "unexpected argument", so ExitCode::SUCCESS here
         // is the disambiguating signal that these args reached
         // sentence_pairs::main rather than being misrouted.
-        let json = r#"[{"id": 1, "ru": "привет", "ipa": "[prʲɪˈvʲet]", "en": "hello", "words": "hello"}]"#;
+        let json =
+            r#"[{"id": 1, "ru": "привет", "ipa": "[prʲɪˈvʲet]", "en": "hello", "words": "hello"}]"#;
         let file = TempFile::new("valid.json", json);
         let path = file.0.to_string_lossy().to_string();
 
