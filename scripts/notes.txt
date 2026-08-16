@@ -4,3 +4,7 @@ rustc --edition 2024 scripts/your_script.rs -o /tmp/your_script
 # run a script's own tests (each script embeds its own #[cfg(test)] module)
 rustc --edition 2024 --test scripts/your_script.rs -o /tmp/your_script_test
 /tmp/your_script_test
+
+- cargo llvm-cov — terminal summary (what I just ran)
+- cargo llvm-cov --html --open — line-by-line HTML report in your browser, shows exactly which lines/branches are uncovered
+- cargo llvm-cov --lcov --output-path lcov.info — for CI/editor integration (e.g. VS Code's Coverage Gutters extension)
